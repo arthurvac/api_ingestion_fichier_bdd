@@ -1,0 +1,12 @@
+.venv
+.git
+.env
+.env.*
+data
+__pycache__
+.pytest_cache
+*.egg-info
+src
+README.md
+docs
+.refactor_backup

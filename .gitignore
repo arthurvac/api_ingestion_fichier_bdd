@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.black_cache/
+*.egg-info/
+.env
+.coverage
+htmlcov/
+build/
+dist/
+# Sources personnelles : conservées localement, jamais ajoutées au dépôt.
+data/
+.refactor_backup/

@@ -1,0 +1,32 @@
+services:
+  db-test:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_DB: ingestion_test
+      POSTGRES_USER: ingestion_test
+      POSTGRES_PASSWORD: ingestion_test_password
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ingestion_test -d ingestion_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+  tests:
+    build:
+      context: .
+      target: test
+    environment:
+      TEST_DATABASE_URL: postgresql+psycopg://ingestion_test:ingestion_test_password@db-test:5432/ingestion_test
+    mem_limit: "${API_MEMORY_LIMIT_MIB:-2048}m"
+    memswap_limit: "${API_MEMORY_LIMIT_MIB:-2048}m"
+    cpus: "${API_CPU_LIMIT:-1.0}"
+    depends_on:
+      db-test:
+        condition: service_healthy
+    volumes:
+      - ./data:/service/data:ro
+      - test_tmp:/service/tmp
+    command: ["python", "-m", "pytest", "tests/integration", "-q", "--tb=short"]
+volumes:
+  test_tmp:

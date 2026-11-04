@@ -42,7 +42,7 @@ Les espaces de bord sont supprimés et les suites d’espaces réduites. Une cha
 | `person.email` | Facultatif ; syntaxe validée par Pydantic/email-validator, sans test de délivrabilité |
 | `person.phone`, `person.fax`, `person.title` | Facultatifs, textuels ; les contacts numériques Excel sont refusés pour préserver les zéros initiaux |
 | `organization.org_name` | Obligatoire lorsqu’une organisation ou un poste est renseigné |
-| `organization.org_vivo_uri` | Texte facultatif ; la source doit fournir une URI d’instance pertinente |
+| `organization.org_vivo_uri` | Texte facultatif conservé après nettoyage ; URI VIVO d’instance ou de catégorie, potentiellement partagée entre organisations |
 | `job.job_title`, `job.job_type` | Textes facultatifs ; un poste renseigné exige une organisation |
 | `job.start_date` | Date calendaire selon la convention globale ci-dessous |
 
@@ -96,7 +96,20 @@ flowchart TD
 
 **Mise à jour.** Seuls les champs `update=true` sont remplacés par une valeur non vide : actuellement email, téléphone, fax et titre. Exemple : un import sans téléphone, ou avec téléphone vide, conserve celui déjà stocké. Deux lignes compatibles de la même identité peuvent compléter des coordonnées et ajouter plusieurs postes ; des coordonnées contradictoires annulent tout le fichier.
 
-**Organisation.** URI d’instance prioritaire, sinon nom exact. Une organisation sans URI peut être enrichie ; plusieurs organisations de même nom sont ambiguës. Une URI déjà connue conserve son nom. Une même URI portant plusieurs noms d’organisation dans un fichier est refusée. Les colonnes de référence `dataURI` / `raw_uri` désignant des classes ontologiques sont ignorées avec avertissement ; un mapping explicite est nécessaire pour leur attribuer un autre sens.
+**Organisation.** Les alias `dataURI` / `raw_uri` alimentent `organization.org_vivo_uri`, sans exclusion des URI de catégories comme `http://vivoweb.org/ontology/core#Department`. L’API conserve la valeur ; elle ne consulte pas l’ontologie ni ne déduit le sens d’une URI par sa forme. Deux noms différents ne sont jamais rapprochés sur la seule URI.
+
+Avec une URI, le couple **nom exact + URI** identifie l’organisation ; une contrainte SQL empêche les doublons, NULL compris. Sans correspondance exacte, une organisation de même nom dont l’URI est NULL peut être enrichie, en conservant son identifiant et ses postes. Sinon, une nouvelle organisation est créée. Un même nom avec deux URI différentes reste deux organisations distinctes. Sans URI fournie, un nom correspondant à une seule organisation suffit et conserve son URI existante ; plusieurs correspondances provoquent une erreur 409 demandant de préciser l’URI. Les noms conservent casse et accents : les homonymes exacts restent une limite du contrat.
+
+```mermaid
+flowchart TD
+    Source["Nom et URI VIVO fournis"] --> Exact{"Couple déjà présent ?"}
+    Exact -->|Oui| Reutiliser["Réutiliser son identifiant"]
+    Exact -->|Non| Vide{"Même nom avec URI NULL ?"}
+    Vide -->|Oui| Enrichir["Compléter l’URI, conserver les postes"]
+    Vide -->|Non| Creer["Créer une organisation distincte"]
+```
+
+Exemple fictif : `Institut A` et `Institut B` peuvent chacun stocker `…#Department` sans fusion. Cette URI décrit alors leur catégorie commune. Le rôle des catégories et des entités individuelles est illustré dans l’[article VIVO, figure 3, pages 6–7](https://yingding.ischool.utexas.edu/Publication/VIVOOntology.pdf).
 
 **Poste.** Ajouter sans réécrire les postes existants. Clé unique : personne + organisation + titre + type + date, NULL compris. Un poste entièrement vide n’est pas créé. `ON CONFLICT DO NOTHING RETURNING` fournit le nombre réel de postes insérés.
 

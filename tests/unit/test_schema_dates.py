@@ -48,18 +48,31 @@ def test_invalid_identity_and_contacts_are_not_coerced(values):
         )
 
 
-def test_source_combined_names_and_uri_policy_are_central():
+@pytest.mark.parametrize("uri_column", ["dataURI", "raw_uri", "org_vivo_uri"])
+def test_source_combined_names_and_uri_policy_are_central(uri_column):
     columns, warnings = resolve_columns(
-        ["dataFirstNames", "dataLastName", "dataURI"], Options()
+        ["dataFirstNames", "dataLastName", uri_column], Options()
     )
-    values = map_values([" Anne Marie, Louise ", " Example ", "ontology"], columns)
+    uri = "http://vivoweb.org/ontology/core#Department"
+    values = map_values([" Anne Marie, Louise ", " Example ", uri], columns)
     assert values["person"] == {
         "first_name": "Anne Marie",
         "middle_name": "Louise",
         "last_name": "Example",
     }
-    assert warnings[0].column == "dataURI"
+    assert values["organization"] == {"org_vivo_uri": uri}
+    assert warnings == []
+
+
+def test_vivo_uri_can_still_be_explicitly_ignored():
+    columns, warnings = resolve_columns(
+        ["first_name", "last_name", "dataURI"],
+        Options(ignored_columns=["dataURI"]),
+    )
+    values = map_values(["Alice", "Example", "http://example.org/type"], columns)
     assert "organization" not in values
+    assert warnings[0].code == "ignored_column"
+    assert warnings[0].column == "dataURI"
 
 
 def test_target_fields_match_active_sql_models():

@@ -165,6 +165,8 @@ Options supplémentaires : `encoding`, `delimiter` pour CSV, `sheets: ["Contacts
 
 Les colonnes additionnelles sans cible sont ignorées **avec avertissement**. `name`, `title`, `date` et `uri` nécessitent un mapping ou une ignorance explicite. Une correspondance ambiguë n’est jamais choisie arbitrairement.
 
+`dataURI` et `raw_uri` sont des alias de `organization.org_vivo_uri` et sont conservés. Une URI VIVO peut décrire une catégorie commune à plusieurs organisations : elle n’est donc pas unique à elle seule. Le rapprochement utilise le couple nom exact + URI ; sans URI, le nom doit correspondre à une seule organisation. Voir les [règles d’organisation](docs/donnees.md#4-rapprocher-mettre-à-jour-et-historiser).
+
 ## Comprendre les traitements
 
 ```mermaid
@@ -221,7 +223,7 @@ python -m alembic revision --autogenerate -m "add person mobile"
 python -m alembic upgrade head
 ```
 
-La V1 commence avec une seule migration initiale, `0001_v1`, qui crée les cinq tables actives sur une base vide. Relire et tester chaque nouvelle migration avant application ; un alias ou une validation purement applicative n’en nécessite pas. Une base issue d’une autre chaîne de migrations ne doit pas être simplement estampillée V1 : consulter les [procédures d’exploitation](docs/exploitation.md#schéma-initial-et-migrations).
+La V1 commence avec `0001_v1`, qui crée les cinq tables actives sur une base vide, puis `0002_shared_vivo_uri`, qui autorise les URI partagées et impose l’unicité du couple nom + URI sans supprimer de données. Relire et tester chaque nouvelle migration avant application ; un alias ou une validation purement applicative n’en nécessite pas. Une base issue d’une autre chaîne de migrations ne doit pas être simplement estampillée V1 : consulter les [procédures d’exploitation](docs/exploitation.md#schéma-initial-et-migrations).
 
 ## Faire évoluer la solution
 
@@ -244,6 +246,6 @@ docker compose -p ingestion-tests -f compose.test.yaml run --rm tests python -m 
 docker compose -p ingestion-tests -f compose.test.yaml down -v
 ```
 
-L’intégration utilise PostgreSQL réel, exclusivement la base/utilisateur `ingestion_test` et un schéma aléatoire. Les quatre originaux sont montés en lecture seule, leurs empreintes vérifiées. Sans URL de test ou sources locales, les tests concernés sont explicitement ignorés. La suite complète validée sur PostgreSQL contient 121 tests ; aucun test ignoré ne vaut validation d’une source absente.
+L’intégration utilise PostgreSQL réel, exclusivement la base/utilisateur `ingestion_test` et un schéma aléatoire. Les quatre originaux sont montés en lecture seule, leurs empreintes vérifiées. Sans URL de test ou sources locales, les tests concernés sont explicitement ignorés. La suite complète validée sur PostgreSQL contient 133 tests, dont la conservation des URI VIVO, les relations entre organisations/postes et la migration depuis une V1 contenant des données ; aucun test ignoré ne vaut validation d’une source absente.
 
 L’API reste locale sans authentification/HTTPS embarqué. Les lots et historiques sont consultables en SQL ; exemple : `docker compose exec db psql -U ingestion_user -d ingestion_db`. Le volume n’est pas une sauvegarde. Une exposition réseau ou une montée en charge doit dimensionner aussi PostgreSQL et l’hôte.

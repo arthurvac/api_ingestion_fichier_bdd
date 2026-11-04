@@ -57,6 +57,7 @@ def reference_rows(path):
                 row["dataJobTitle"],
                 row["dataPositionType"],
                 row["dataJobStartDate"],
+                row["dataURI"],
             )
         else:
             person = {
@@ -76,6 +77,7 @@ def reference_rows(path):
                 row["raw_job_title"],
                 row["raw_position_type"],
                 row["raw_date"],
+                row["raw_uri"],
             )
         person = {key: clean(value) for key, value in person.items()}
         yield person, (
@@ -83,6 +85,7 @@ def reference_rows(path):
             clean(job[1]),
             clean(job[2]),
             date(int(job[3]), 1, 1),
+            clean(job[4]),
         )
 
 
@@ -97,11 +100,13 @@ def test_reference_sequence_values_jobs_history_and_immediate_reimports(
     if not all(path.exists() for path in paths):
         pytest.skip("Local reference files are unavailable.")
     expected_people, expected_jobs, expected_history = {}, set(), []
+    expected_organizations = set()
     for path, expected_created, expected_updated in zip(
         paths, (16, 24, 0, 0), (0, 0, 8, 4)
     ):
         previous_jobs = len(expected_jobs)
         for person, job in reference_rows(path):
+            expected_organizations.add((job[0], job[4]))
             identity = tuple(
                 person[key] for key in ("first_name", "middle_name", "last_name")
             )
@@ -128,6 +133,7 @@ def test_reference_sequence_values_jobs_history_and_immediate_reimports(
         )
         assert response.status_code == 200
         body = response.json()
+        assert not any(issue["code"] == "ignored_column" for issue in body["warnings"])
         assert body.get("persons_created", body.get("inserted")) == expected_created
         assert body.get("persons_updated", body.get("updated")) == expected_updated
         if "jobs_created" in body:
@@ -170,15 +176,23 @@ def test_reference_sequence_values_jobs_history_and_immediate_reimports(
                     pytrace=False,
                 )
             organizations = {
-                o.org_id: o.org_name for o in session.scalars(select(Organization))
+                o.org_id: (o.org_name, o.org_vivo_uri)
+                for o in session.scalars(select(Organization))
             }
+            if set(organizations.values()) != expected_organizations:
+                pytest.fail(
+                    "Stored reference organization names or VIVO URIs differ.",
+                    pytrace=False,
+                )
+            assert len(organizations) == len(expected_organizations)
             actual_jobs = {
                 (
                     identities[j.person_id],
-                    organizations[j.org_id],
+                    organizations[j.org_id][0],
                     j.job_title,
                     j.job_type,
                     j.start_date,
+                    organizations[j.org_id][1],
                 )
                 for j in session.scalars(select(Job))
             }

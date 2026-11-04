@@ -270,7 +270,7 @@ def test_empty_job_is_not_created_and_job_requires_organization(
     assert counts(session_factory) == [1, 0, 0, 0, 1]
 
 
-def test_uri_priority_enrichment_and_ambiguous_name(api_client, session_factory):
+def test_name_uri_pair_enrichment_and_ambiguous_name(api_client, session_factory):
     headers = ["first_name", "last_name", "org_name", "org_vivo_uri", "job_type"]
     assert (
         post(
@@ -295,6 +295,21 @@ def test_uri_priority_enrichment_and_ambiguous_name(api_client, session_factory)
         == 200
     )
     assert counts(session_factory) == [1, 1, 1, 0, 2]
+    with session_factory() as session:
+        organization = session.scalar(select(Organization))
+        assert organization.org_vivo_uri == "https://example.org/org/1"
+        org_id = organization.org_id
+        assert session.scalar(select(Job.org_id)) == org_id
+    missing_uri = post(
+        api_client, headers, [["Alice", "Example", "Institute", "", "Permanent"]]
+    )
+    assert missing_uri.status_code == 200
+    assert missing_uri.json()["jobs_created"] == 0
+    with session_factory() as session:
+        assert (
+            session.get(Organization, org_id).org_vivo_uri
+            == "https://example.org/org/1"
+        )
     assert (
         post(
             api_client,
@@ -314,18 +329,117 @@ def test_uri_priority_enrichment_and_ambiguous_name(api_client, session_factory)
     assert counts(session_factory) == before
 
 
-def test_shared_ontology_uri_cannot_merge_organizations(api_client, session_factory):
+@pytest.mark.parametrize(
+    "kind,uri_column",
+    [("csv", "dataURI"), ("xlsx", "raw_uri"), ("csv", "org_vivo_uri")],
+)
+def test_shared_vivo_uri_is_stored_without_merging_organizations(
+    api_client, session_factory, kind, uri_column
+):
+    uri = "http://vivoweb.org/ontology/core#Department"
+    headers = ["first_name", "last_name", "org_name", uri_column, "job_type"]
+    rows = [
+        ["Alice", "Example", "Institute A", uri, "Permanent"],
+        ["Bob", "Example", "Institute B", uri, "Permanent"],
+    ]
+    response = post(api_client, headers, rows, kind=kind)
+    assert response.status_code == 200
+    assert response.json()["jobs_created"] == 2
+    assert response.json()["warnings"] == []
+    repeated = post(api_client, headers, rows, kind=kind)
+    assert repeated.status_code == 200
+    assert repeated.json()["persons_created"] == 0
+    assert repeated.json()["jobs_created"] == 0
+    assert counts(session_factory) == [2, 2, 2, 0, 2]
+    with session_factory() as session:
+        relations = session.execute(
+            select(Person.first_name, Organization.org_name, Organization.org_vivo_uri)
+            .select_from(Job)
+            .join(Person)
+            .join(Organization)
+        ).all()
+        assert set(relations) == {
+            ("Alice", "Institute A", uri),
+            ("Bob", "Institute B", uri),
+        }
+
+
+@pytest.mark.parametrize("kind", ["csv", "xlsx"])
+def test_shared_vivo_uri_across_uploads_keeps_distinct_organizations(
+    api_client, session_factory, kind
+):
+    uri = "http://vivoweb.org/ontology/core#Department"
+    headers = ["first_name", "last_name", "org_name", "organization_uri", "job_type"]
+    for organization in ("Institute A", "Institute B", "Institute A", "Institute B"):
+        response = post(
+            api_client,
+            headers,
+            [["Alice", "Example", organization, uri, "Permanent"]],
+            kind=kind,
+        )
+        assert response.status_code == 200
+    assert counts(session_factory) == [1, 2, 2, 0, 4]
+    with session_factory() as session:
+        assert set(
+            session.execute(select(Organization.org_name, Organization.org_vivo_uri))
+        ) == {("Institute A", uri), ("Institute B", uri)}
+
+
+@pytest.mark.parametrize("uri", [None, "http://vivoweb.org/ontology/core#Department"])
+def test_organization_name_uri_pair_is_unique_in_sql(session_factory, uri):
+    with session_factory.begin() as session:
+        session.add(Organization(org_name="Institute", org_vivo_uri=uri))
+    with pytest.raises(IntegrityError):
+        with session_factory.begin() as session:
+            session.add(Organization(org_name="Institute", org_vivo_uri=uri))
+
+
+def test_vivo_uri_requires_organization_name(api_client, session_factory):
     response = post(
         api_client,
-        ["first_name", "last_name", "org_name", "org_vivo_uri"],
+        ["first_name", "last_name", "dataURI"],
+        [["Alice", "Example", "http://vivoweb.org/ontology/core#Department"]],
+    )
+    assert response.status_code == 422
+    assert response.json()["errors"][0]["column"] == "org_name"
+    assert counts(session_factory) == [0, 0, 0, 0, 0]
+
+
+def test_failed_import_rolls_back_vivo_enrichment_and_new_organization(
+    api_client, session_factory
+):
+    headers = ["first_name", "last_name", "email", "org_name", "dataURI", "job_type"]
+    assert (
+        post(
+            api_client,
+            headers,
+            [["Alice", "Example", "alice@example.org", "Institute A", "", "Permanent"]],
+        ).status_code
+        == 200
+    )
+    before = counts(session_factory)
+    uri = "http://vivoweb.org/ontology/core#Department"
+    response = post(
+        api_client,
+        headers,
         [
-            ["Alice", "Example", "Institute A", "https://example.org/class/University"],
-            ["Bob", "Example", "Institute B", "https://example.org/class/University"],
+            [
+                "Alice",
+                "Example",
+                "updated@example.org",
+                "Institute A",
+                uri,
+                "Permanent",
+            ],
+            ["Bob", "Example", "bob@example.org", "Institute B", uri, "Permanent"],
+            ["Carol", "Example", "invalid-email", "Institute C", uri, "Permanent"],
         ],
     )
     assert response.status_code == 422
-    assert response.json()["errors"][0]["code"] == "ambiguous_organization_uri"
-    assert counts(session_factory) == [0, 0, 0, 0, 0]
+    assert counts(session_factory) == before
+    with session_factory() as session:
+        assert session.scalar(select(Organization.org_vivo_uri)) is None
+        assert session.scalar(select(Person.email)) == "alice@example.org"
 
 
 def test_date_detection_and_native_sql_date(api_client, session_factory):

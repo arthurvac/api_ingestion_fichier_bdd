@@ -229,6 +229,8 @@ La V1 commence avec `0001_v1`, qui crée les cinq tables actives sur une base vi
 
 Les [règles de données et l’ajout d’un champ](docs/donnees.md#faire-évoluer-un-champ) expliquent comment adapter le contrat central et les validations. Les [choix techniques et fonctionnalités possibles](docs/choix_et_evolutions.md) distinguent les mécanismes actuels des évolutions à étudier. La [mise en production, la configuration et l’échelle verticale/horizontale](docs/exploitation.md) sont regroupées dans un seul guide.
 
+Pour ajouter une bibliothèque ou mettre à jour ses versions, suivre la [maintenance des dépendances](docs/choix_et_evolutions.md#maintenance-des-dépendances) : modifier `pyproject.toml`, générer les deux `.lock` avec uv, puis valider l’installation et les tests Windows/Linux. Les commandes couvrent les mises à jour ciblées et globales ; pip reste l’outil d’installation utilisé par l’API.
+
 ## Tests
 
 Les tests vérifient la migration initiale, la cohérence ORM/SQL, les variantes CSV/XLSX, l’atomicité, les réimports et les changements historisés. Le scénario des quatre originaux compare aussi coordonnées, relations et anciennes/nouvelles valeurs.

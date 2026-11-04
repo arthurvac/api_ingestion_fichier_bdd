@@ -23,6 +23,88 @@ Les versions exactes sont dans les deux `.lock`. `tzdata` est une dépendance de
 
 Les images sont `python:3.13-slim-trixie` et `postgres:17-trixie`, également pour les tests. Trixie fixe la génération Debian, tandis que `slim` limite les paquets préinstallés de l’API. Les tags reçoivent des correctifs et ne garantissent pas une image identique dans le temps ; un digest est nécessaire pour cela. Le changement de distribution conserve Python 3.13 et PostgreSQL 17.
 
+## Maintenance des dépendances
+
+`pyproject.toml` est la source à modifier : `[project.dependencies]` pour l’API, `[project.optional-dependencies].dev` pour les outils de développement. Les deux `.lock` sont des fichiers de requirements lisibles par pip ; ils fixent aussi les dépendances indirectes. `requirements-dev.lock` contient l’API et les outils de test, avec les mêmes versions communes que `requirements.lock`.
+
+```mermaid
+flowchart LR
+    Besoin["Modifier pyproject.toml"] --> Production["Générer requirements.lock"]
+    Production --> Developpement["Générer requirements-dev.lock avec contrainte runtime"]
+    Developpement --> Verification["Relire le diff et tester Windows / Linux"]
+    Verification --> Commit["Versionner ensemble les fichiers concernés"]
+```
+
+### Préparer l’outil de génération
+
+Depuis la racine du dépôt, dans un venv Python 3.13 activé, installer **uv 0.13.7**, version utilisée pour vérifier cette procédure. Les commandes ci-dessous fonctionnent dans PowerShell et Bash ; les étapes de création du venv figurent dans le [README](../README.md#développement-python-local--facultatif).
+
+```sh
+python -m pip install "uv==0.13.7"
+python -m uv --version
+```
+
+uv sert uniquement à cette maintenance : pip reste utilisé pour installer les dépendances et Docker n’a pas besoin d’uv. La génération lit `pyproject.toml`, pas les paquets du venv. Ne pas remplacer ce processus par `pip freeze > requirements.lock` : cela inclurait les outils locaux et perdrait les conditions propres aux autres systèmes.
+
+### Ajouter ou supprimer une dépendance
+
+Modifier d’abord la liste ou la contrainte correspondante dans `pyproject.toml`, puis générer **dans cet ordre** :
+
+```sh
+python -m uv pip compile pyproject.toml --universal --python-version 3.13 --output-file requirements.lock
+python -m uv pip compile pyproject.toml --extra dev --universal --python-version 3.13 --constraint requirements.lock --output-file requirements-dev.lock
+```
+
+Conserver les fichiers existants avant génération : uv privilégie leurs versions tant qu’elles restent compatibles. Une suppression retire les paquets devenus inutiles, sauf s’ils sont encore requis indirectement. La contrainte du second appel empêche le fichier de développement de choisir d’autres versions pour les dépendances de l’API.
+
+`--universal` conserve les variantes de plateforme, notamment `tzdata` et `colorama` conditionnés à Windows ; ne pas recopier ces marqueurs à la main. `--python-version 3.13` correspond à la version du projet. Une résolution universelle ne remplace pas les tests sur les systèmes cibles. Une première régénération peut ajouter des commentaires et préciser les marqueurs sans changer les versions.
+
+### Mettre à jour les versions
+
+Pour cibler une bibliothèque de l’API, par exemple openpyxl, ajouter `--upgrade-package` au premier appel, puis régénérer le fichier de développement :
+
+```sh
+python -m uv pip compile pyproject.toml --universal --python-version 3.13 --upgrade-package openpyxl --output-file requirements.lock
+python -m uv pip compile pyproject.toml --extra dev --universal --python-version 3.13 --constraint requirements.lock --output-file requirements-dev.lock
+```
+
+Pour cibler un outil comme Black, conserver le premier appel normal et ajouter `--upgrade-package black` au second. Les dépendances indirectes nécessaires peuvent également évoluer. Pour une mise à jour globale, utiliser :
+
+```sh
+python -m uv pip compile pyproject.toml --universal --python-version 3.13 --upgrade --output-file requirements.lock
+python -m uv pip compile pyproject.toml --extra dev --universal --python-version 3.13 --constraint requirements.lock --upgrade --output-file requirements-dev.lock
+```
+
+Ces mises à jour respectent toujours les bornes de `pyproject.toml` ; élargir une borne majeure demande une décision et des tests adaptés. La version de setuptools dans `[build-system].requires` se maintient séparément : elle concerne la construction du paquet, pas les dépendances d’exécution figées ici. Les images Docker se mettent également à jour séparément.
+
+### Vérifier et valider la mise à jour
+
+Relire `git diff -- pyproject.toml requirements.lock requirements-dev.lock`, les notes de version des bibliothèques modifiées et les éventuels changements de dépendances indirectes. Tester l’installation dans un **venv Python 3.13 propre** sur Windows, selon le README :
+
+```sh
+python -m pip install -r requirements-dev.lock
+python -m pip install --no-deps -e .
+python -m pip check
+python -m pytest tests/unit -q
+python -m black --check --workers 1 app tests migrations
+```
+
+Puis reconstruire les images et tester Linux avec PostgreSQL isolé :
+
+```sh
+docker compose build api
+docker compose -p ingestion-tests -f compose.test.yaml build tests
+docker compose -p ingestion-tests -f compose.test.yaml run --rm tests python -m pip check
+docker compose -p ingestion-tests -f compose.test.yaml run --rm tests python -m pytest -q --tb=short
+docker compose -p ingestion-tests -f compose.test.yaml down -v
+```
+
+La dernière commande supprime exclusivement les données de test. Les quatre fichiers locaux de référence sont nécessaires pour valider tout le scénario métier ; un test ignoré faute de source ne constitue pas une réussite. La construction seule ne redéploie pas l’API en cours d’exécution.
+
+Après validation, committer ensemble les modifications du `pyproject.toml` et des `.lock` concernées, en précisant le motif et les contrôles réellement exécutés. Si la validation échoue, corriger la contrainte et régénérer, ou revenir à l’ensemble précédent ; ne pas livrer un fichier de développement désaligné. Aucun schéma SQL n’évolue du seul fait de la génération des `.lock`.
+
+Références : [génération, contraintes et mises à jour uv](https://docs.astral.sh/uv/pip/compile/), [options de résolution](https://docs.astral.sh/uv/reference/cli/#uv-pip-compile).
+
 ## Décisions de conception
 
 ```mermaid

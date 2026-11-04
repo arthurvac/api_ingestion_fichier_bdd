@@ -1,6 +1,6 @@
 services:
   db-test:
-    image: postgres:17-bookworm
+    image: postgres:17-trixie
     environment:
       POSTGRES_DB: ingestion_test
       POSTGRES_USER: ingestion_test

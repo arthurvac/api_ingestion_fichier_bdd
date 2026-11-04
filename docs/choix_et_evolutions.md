@@ -14,12 +14,14 @@
 | PostgreSQL 17 | Relations, JSONB, `DATE`, unicité avec NULL et verrous transactionnels | La base est une dépendance obligatoire, avec sauvegardes à exploiter |
 | SQLAlchemy 2 + psycopg 3 | Requêtes lisibles, session par requête, transactions et pool | Les limites de connexions doivent être dimensionnées entre processus/instances |
 | Alembic | Historique reproductible du **schéma**, à partir de `0001_v1` | Une migration doit être relue ; ce n’est pas l’historique des valeurs métier |
-| Docker + Compose | Même environnement Linux sur Windows/Linux, réseau, volumes et quotas | Les budgets sont par conteneur ; le volume ne constitue pas une sauvegarde |
+| Docker + Compose | Images officielles sur Debian 13 Trixie, environnement commun Windows/Linux, réseau, volumes et quotas | Les budgets sont par conteneur ; le volume ne constitue pas une sauvegarde |
 | pip + setuptools et fichiers `.lock` | Paquet installable et versions Python exactes | Les tags système Docker ne sont pas figés par digest |
 | Pytest + httpx / TestClient | Tests unitaires et intégration sur PostgreSQL réel | Les fichiers de référence restent locaux, sans données personnelles publiées |
 | Black | Convention de formatage commune | Ni vérification de typage ni analyse de sécurité exhaustive |
 
 Les versions exactes sont dans les deux `.lock`. `tzdata` est une dépendance de psycopg sous Windows uniquement. Aucun DataFrame, Redis, SQLite de travail, framework d’audit ou système de plugins n’est nécessaire au parcours actuel.
+
+Les images sont `python:3.13-slim-trixie` et `postgres:17-trixie`, également pour les tests. Trixie fixe la génération Debian, tandis que `slim` limite les paquets préinstallés de l’API. Les tags reçoivent des correctifs et ne garantissent pas une image identique dans le temps ; un digest est nécessaire pour cela. Le changement de distribution conserve Python 3.13 et PostgreSQL 17.
 
 ## Décisions de conception
 

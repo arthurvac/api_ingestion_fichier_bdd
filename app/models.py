@@ -8,14 +8,12 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
-    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
     Uuid,
     func,
-    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -53,12 +51,11 @@ class Person(Base):
 class Organization(Base):
     __tablename__ = "organization"
     __table_args__ = (
-        UniqueConstraint("org_vivo_uri", name="uq_org_uri"),
-        Index(
-            "uq_org_name_without_uri",
+        UniqueConstraint(
             "org_name",
-            unique=True,
-            postgresql_where=text("org_vivo_uri IS NULL"),
+            "org_vivo_uri",
+            name="uq_org_identity",
+            postgresql_nulls_not_distinct=True,
         ),
         CheckConstraint("length(btrim(org_name)) > 0", name="ck_org_name"),
     )

@@ -149,7 +149,13 @@ class OrganizationData(InputModel):
     org_vivo_uri: str | None = Field(
         default=None,
         json_schema_extra={
-            "aliases": ["org_vivo_uri", "organization_uri", "uri_organisation"]
+            "aliases": [
+                "org_vivo_uri",
+                "organization_uri",
+                "uri_organisation",
+                "dataURI",
+                "raw_uri",
+            ]
         },
     )
 
@@ -222,10 +228,6 @@ class Record(BaseModel):
 MODELS = {"person": PersonData, "organization": OrganizationData, "job": JobData}
 IDENTITY_FIELDS = ("first_name", "middle_name", "last_name")
 AMBIGUOUS_HEADERS = {"name", "title", "titre", "date", "uri"}
-IGNORED_COLUMNS = {
-    "dataURI": "Ontology class URI, not an organization identifier.",
-    "raw_uri": "Ontology class URI, not an organization identifier.",
-}
 
 
 def target_fields():

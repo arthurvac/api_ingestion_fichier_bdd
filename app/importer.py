@@ -96,7 +96,10 @@ def reconcile_person(session, data, import_id, created, cache):
 def get_or_create_organization(session, data):
     if data.org_vivo_uri:
         found = session.scalar(
-            select(Organization).where(Organization.org_vivo_uri == data.org_vivo_uri)
+            select(Organization).where(
+                Organization.org_name == data.org_name,
+                Organization.org_vivo_uri == data.org_vivo_uri,
+            )
         )
         if found:
             return found.org_id
@@ -197,7 +200,7 @@ def _record(row, columns, dates):
         raise ImportFailure("File validation failed", issues) from None
 
 
-def _check_duplicates(record, seen, uris, row, columns):
+def _check_duplicates(record, seen, row, columns):
     identity = tuple(getattr(record.person, field) for field in IDENTITY_FIELDS)
     previous = seen.setdefault(identity, {})
     for name, field in PersonData.model_fields.items():
@@ -213,17 +216,6 @@ def _check_duplicates(record, seen, uris, row, columns):
                 sheet=row.sheet,
             )
         previous[name] = value
-    org = record.organization
-    if org and org.org_vivo_uri:
-        previous_name = uris.setdefault(org.org_vivo_uri, org.org_name)
-        if previous_name != org.org_name:
-            fail(
-                "ambiguous_organization_uri",
-                "One organization URI refers to multiple organization names.",
-                row=row.number,
-                column=columns["organization.org_vivo_uri"].source,
-                sheet=row.sheet,
-            )
 
 
 def import_file(
@@ -316,7 +308,7 @@ def import_file(
                     message="Year-only dates were stored as January 1 under the declared source policy.",
                 )
             )
-        errors, seen, uris, cache = [], {}, {}, OrderedDict()
+        errors, seen, cache = [], {}, OrderedDict()
         created, updated, touched = set(), set(), set()
         counts = dict(inserted=0, updated=0, unchanged=0)
         jobs_created, current_row = 0, None
@@ -347,7 +339,7 @@ def import_file(
                         sql_budget()
                         try:
                             record = _record(row, columns, dates)
-                            _check_duplicates(record, seen, uris, row, columns)
+                            _check_duplicates(record, seen, row, columns)
                         except ImportFailure as exc:
                             errors.extend(
                                 issue.model_copy(

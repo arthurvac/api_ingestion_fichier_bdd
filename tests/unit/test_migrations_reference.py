@@ -24,23 +24,22 @@ def test_original_source_hashes_are_unchanged(filename, expected):
     assert hashlib.sha256(path.read_bytes()).hexdigest() == expected
 
 
-def test_v1_has_a_single_initial_revision():
+def test_migration_chain_preserves_v1_and_adds_shared_vivo_uri():
     from alembic.script import ScriptDirectory
 
     config = Config(str(ROOT / "alembic.ini"))
     scripts = ScriptDirectory.from_config(config)
     revisions = list(scripts.walk_revisions())
-    assert scripts.get_heads() == ["0001_v1"]
-    assert len(revisions) == 1 and revisions[0].down_revision is None
-    assert [path.name for path in (ROOT / "migrations/versions").glob("*.py")] == [
-        "0001_v1.py"
-    ]
+    assert scripts.get_heads() == ["0002_shared_vivo_uri"]
+    assert len(revisions) == 2
+    assert scripts.get_revision("0001_v1").down_revision is None
+    assert scripts.get_revision("0002_shared_vivo_uri").down_revision == "0001_v1"
 
 
 def test_initial_schema_compiles_offline_without_obsolete_tables():
     output = io.StringIO()
     config = Config(str(ROOT / "alembic.ini"), output_buffer=output)
-    command.upgrade(config, "head", sql=True)
+    command.upgrade(config, "0001_v1", sql=True)
     sql = output.getvalue()
     assert sql.count("CREATE TABLE ") == 6
     for table in ["person", "organization", "job", "import_batch", "person_history"]:

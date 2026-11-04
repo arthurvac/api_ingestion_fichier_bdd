@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:17-bookworm
+    image: postgres:17-trixie
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-ingestion_db}
       POSTGRES_USER: ${POSTGRES_USER:-ingestion_user}

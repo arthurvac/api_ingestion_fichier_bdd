@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from app.errors import Issue, fail
 from app.schema import (
     AMBIGUOUS_HEADERS,
-    IGNORED_COLUMNS,
     MODELS,
     Options,
     normalize_header,
@@ -41,9 +40,6 @@ def resolve_columns(headers: list[str], options: Options, sheet=None):
         )
     resolved, used, warnings = {}, set(), []
     ignored = {normalize_header(name) for name in options.ignored_columns}
-    known_ignored = {
-        normalize_header(name): reason for name, reason in IGNORED_COLUMNS.items()
-    }
     for target, source in options.mapping.items():
         matches = [
             i
@@ -112,11 +108,13 @@ def resolve_columns(headers: list[str], options: Options, sheet=None):
                 column=name,
                 sheet=sheet,
             )
-        reason = known_ignored.get(
-            normal, "Column has no selected target and was ignored."
-        )
         warnings.append(
-            Issue(code="ignored_column", message=reason, column=name, sheet=sheet)
+            Issue(
+                code="ignored_column",
+                message="Column has no selected target and was ignored.",
+                column=name,
+                sheet=sheet,
+            )
         )
     for section, model in MODELS.items():
         if section != "person":
